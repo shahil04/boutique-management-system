@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Boutique Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8fafc; }
+    .tab-active { color: #db2777; border-top: 3px solid #db2777; background-color: #fdf2f8; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body class="pb-24 text-slate-800">
+
+  <!-- TOP HEADER -->
+  <header class="bg-pink-700 text-white sticky top-0 z-30 shadow-md">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-scissors text-xl text-pink-200"></i>
+        <div>
+          <h1 id="headerBoutiqueName" class="font-bold text-lg leading-tight">My Boutique</h1>
+          <p id="syncStatus" class="text-[11px] text-pink-200">Ready</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="fetchOrders()" class="p-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm" title="Refresh Data">
+          <i id="refreshIcon" class="fa-solid fa-rotate-right"></i>
+        </button>
+        <button onclick="openSettings()" class="p-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm" title="Settings">
+          <i class="fa-solid fa-gear"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-3xl mx-auto px-3 pt-4">
+
+    <!-- ==================== TAB 1: DASHBOARD & CUSTOMERS ==================== -->
+    <section id="tab-dashboard" class="space-y-4">
+      
+      <!-- 4 KPI CARDS -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div onclick="filterList('all')" class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 cursor-pointer active:scale-95 transition">
+          <p class="text-xs text-slate-500 font-medium">Total Customers</p>
+          <p id="kpiTotal" class="text-2xl font-extrabold text-slate-800 mt-1">0</p>
+        </div>
+        <div onclick="filterList('month')" class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 cursor-pointer active:scale-95 transition">
+          <p class="text-xs text-slate-500 font-medium">This Month</p>
+          <p id="kpiMonth" class="text-2xl font-extrabold text-pink-600 mt-1">0</p>
+        </div>
+        <div onclick="filterList('regular')" class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 cursor-pointer active:scale-95 transition">
+          <p class="text-xs text-slate-500 font-medium">⭐ Regular (2+)</p>
+          <p id="kpiRegular" class="text-2xl font-extrabold text-amber-500 mt-1">0</p>
+        </div>
+        <div onclick="filterList('urgent')" class="bg-white p-3.5 rounded-xl shadow-sm border border-red-200 bg-red-50/40 cursor-pointer active:scale-95 transition">
+          <p class="text-xs text-red-600 font-semibold">Due Today / Urgent</p>
+          <p id="kpiUrgent" class="text-2xl font-extrabold text-red-600 mt-1">0</p>
+        </div>
+      </div>
+
+      <!-- GALLA / CASH COUNTER STRIP -->
+      <div class="bg-emerald-900 text-white rounded-xl p-3 flex justify-between items-center shadow-sm">
+        <div>
+          <p class="text-[11px] uppercase tracking-wider text-emerald-300">Today's Advance (Galla)</p>
+          <p id="gallaToday" class="text-lg font-bold">₹0</p>
+        </div>
+        <div class="text-right">
+          <p class="text-[11px] uppercase tracking-wider text-emerald-300">Total Pending Balance</p>
+          <p id="gallaPending" class="text-lg font-bold text-amber-300">₹0</p>
+        </div>
+      </div>
+
+      <!-- SEARCH & FILTER PILLS -->
+      <div class="space-y-2">
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3.5 text-slate-400"></i>
+          <input type="text" id="searchInput" oninput="renderOrders()" placeholder="Search name, last 4 phone digits, or ID..." 
+            class="w-full pl-10 pr-4 py-3 bg-white border border-slate-300 rounded-xl text-base shadow-sm focus:outline-none focus:border-pink-600" />
+        </div>
+
+        <div class="flex gap-2 overflow-x-auto hide-scrollbar pb-1 text-xs font-semibold">
+          <button onclick="filterList('all')" id="pill-all" class="filter-pill px-3 py-1.5 rounded-full bg-pink-700 text-white whitespace-nowrap">All Orders</button>
+          <button onclick="filterList('urgent')" id="pill-urgent" class="filter-pill px-3 py-1.5 rounded-full bg-white border border-slate-300 text-slate-700 whitespace-nowrap">🔥 Due Soon</button>
+          <button onclick="filterList('regular')" id="pill-regular" class="filter-pill px-3 py-1.5 rounded-full bg-white border border-slate-300 text-slate-700 whitespace-nowrap">⭐ Regular</button>
+          <button onclick="filterList('month')" id="pill-month" class="filter-pill px-3 py-1.5 rounded-full bg-white border border-slate-300 text-slate-700 whitespace-nowrap">This Month</button>
+          <button onclick="filterList('pendingBal')" id="pill-pendingBal" class="filter-pill px-3 py-1.5 rounded-full bg-white border border-slate-300 text-slate-700 whitespace-nowrap">💰 Balance Due</button>
+        </div>
+      </div>
+
+      <!-- CUSTOMER ORDER CARDS LIST -->
+      <div id="ordersList" class="space-y-3">
+        <div class="text-center py-10 text-slate-400">
+          <i class="fa-solid fa-spinner fa-spin text-2xl mb-2"></i>
+          <p>Loading boutique orders...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: ADD NEW ORDER ==================== -->
+    <section id="tab-add" class="hidden">
+      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <h2 class="text-lg font-bold text-slate-800 border-b pb-2"><i class="fa-solid fa-plus-circle text-pink-600 mr-1"></i> New Customer / Order</h2>
+
+        <form id="addOrderForm" onsubmit="submitNewOrder(event)" class="space-y-3.5">
+          <!-- BILL PHOTO CAPTURE (BIG & EASY) -->
+          <div class="bg-pink-50 border-2 border-dashed border-pink-300 rounded-xl p-4 text-center">
+            <label for="billPhotoInput" class="cursor-pointer block">
+              <div id="photoPlaceholder">
+                <i class="fa-solid fa-camera text-3xl text-pink-600 mb-1"></i>
+                <p class="font-bold text-pink-800 text-sm">Tap to Take Bill Photo / Upload Slip</p>
+                <p class="text-xs text-pink-600">Saves directly to Google Drive for instant view</p>
+              </div>
+              <img id="photoPreview" class="hidden max-h-48 mx-auto rounded-lg shadow-sm object-contain" />
+            </label>
+            <input type="file" id="billPhotoInput" accept="image/*" capture="environment" onchange="handleImageSelect(event)" class="hidden" />
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">Customer Name *</label>
+              <input type="text" id="custName" required placeholder="e.g. Sunita Sharma" class="w-full p-3 border border-slate-300 rounded-xl text-base" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">WhatsApp Number *</label>
+              <div class="flex">
+                <span class="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-slate-300 bg-slate-100 text-slate-600 font-bold text-sm">+91</span>
+                <input type="tel" id="custPhone" required pattern="[0-9]{10}" maxlength="10" placeholder="9876543210" class="w-full p-3 border border-slate-300 rounded-r-xl text-base" />
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">Garment / Item *</label>
+              <input type="text" id="custGarment" required placeholder="e.g. Bridal Blouse, Suit" class="w-full p-3 border border-slate-300 rounded-xl text-base" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">Delivery Date * (Syncs Calendar)</label>
+              <input type="date" id="custDelivery" required class="w-full p-3 border border-slate-300 rounded-xl text-base bg-white" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">Total (₹) *</label>
+              <input type="number" id="custTotal" required oninput="calcBalance()" placeholder="1500" class="w-full p-3 border border-slate-300 rounded-xl text-base" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">Advance (₹)</label>
+              <input type="number" id="custAdvance" value="0" oninput="calcBalance()" placeholder="500" class="w-full p-3 border border-slate-300 rounded-xl text-base" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">Balance (₹)</label>
+              <input type="text" id="custBalance" readonly value="₹0" class="w-full p-3 border border-slate-200 bg-slate-100 rounded-xl text-base font-bold text-red-600" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">Measurements / Notes (Tap Mic to Speak)</label>
+            <div class="flex gap-2">
+              <input type="text" id="custNotes" placeholder="e.g. Deep neck 9 inch, golden piping..." class="w-full p-3 border border-slate-300 rounded-xl text-base" />
+              <button type="button" onclick="startVoiceInput()" id="micBtn" class="px-4 bg-slate-200 hover:bg-slate-300 rounded-xl text-slate-700">
+                <i class="fa-solid fa-microphone"></i>
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" id="saveOrderBtn" class="w-full py-3.5 bg-pink-700 hover:bg-pink-800 text-white font-bold rounded-xl text-base shadow-md active:scale-98 transition">
+            <i class="fa-solid fa-cloud-arrow-up mr-1"></i> Save Order & Sync Calendar
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 3: CALENDAR AGENDA ==================== -->
+    <section id="tab-calendar" class="hidden space-y-3">
+      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">Delivery Schedule</h2>
+          <p class="text-xs text-slate-500">Auto-synced with Google Calendar</p>
+        </div>
+        <a href="https://calendar.google.com" target="_blank" class="px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5">
+          <i class="fa-regular fa-calendar"></i> Open Google Calendar
+        </a>
+      </div>
+      <div id="calendarAgendaList" class="space-y-3"></div>
+    </section>
+
+    <!-- ==================== TAB 4: BULK / GROUP WHATSAPP OFFERS ==================== -->
+    <section id="tab-offers" class="hidden space-y-4">
+      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+        <h2 class="text-lg font-bold text-slate-800"><i class="fa-brands fa-whatsapp text-green-600 mr-1"></i> Send Group Offer</h2>
+        
+        <!-- Quick Templates -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">1. Choose Quick Template or Type Your Own</label>
+          <div class="flex gap-2 overflow-x-auto pb-1 text-xs">
+            <button type="button" onclick="setOfferTemplate('festive')" class="px-3 py-1.5 bg-pink-100 text-pink-800 font-semibold rounded-lg whitespace-nowrap">🎉 Festive 20% Off</button>
+            <button type="button" onclick="setOfferTemplate('wedding')" class="px-3 py-1.5 bg-amber-100 text-amber-800 font-semibold rounded-lg whitespace-nowrap">💍 Wedding Season</button>
+            <button type="button" onclick="setOfferTemplate('newstock')" class="px-3 py-1.5 bg-purple-100 text-purple-800 font-semibold rounded-lg whitespace-nowrap">👗 New Fabric Arrival</button>
+          </div>
+        </div>
+
+        <textarea id="offerMessageBox" rows="4" class="w-full p-3 border border-slate-300 rounded-xl text-sm" placeholder="Write your offer message here... Use {name} to insert customer's name automatically!"></textarea>
+
+        <!-- Audience Selector -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">2. Select Customers</label>
+          <div class="grid grid-cols-3 gap-2 text-xs font-bold">
+            <button type="button" onclick="prepareOfferQueue('all')" id="aud-all" class="aud-btn p-2.5 rounded-xl border-2 border-pink-600 bg-pink-50 text-pink-800">All Customers</button>
+            <button type="button" onclick="prepareOfferQueue('regular')" id="aud-regular" class="aud-btn p-2.5 rounded-xl border border-slate-300 bg-white text-slate-700">⭐ Regular Only</button>
+            <button type="button" onclick="prepareOfferQueue('month')" id="aud-month" class="aud-btn p-2.5 rounded-xl border border-slate-300 bg-white text-slate-700">This Month</button>
+          </div>
+        </div>
+
+        <!-- Rapid 1-Click Queue Box -->
+        <div id="offerQueueCard" class="bg-green-50 border border-green-200 rounded-xl p-4 text-center space-y-2">
+          <p id="queueCounterText" class="text-sm font-bold text-green-900">0 Customers Selected</p>
+          <p id="queueCurrentCustomer" class="text-xs text-green-700">Ready to start sending</p>
+          <button onclick="sendNextOffer()" id="sendNextOfferBtn" class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-md text-base">
+            <i class="fa-brands fa-whatsapp mr-1"></i> Send to First Customer
+          </button>
+          <button onclick="resetOfferQueue()" class="text-xs text-slate-500 underline pt-1">Reset Queue</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- BOTTOM NAVIGATION BAR -->
+  <nav class="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-30 shadow-lg">
+    <div class="max-w-3xl mx-auto grid grid-cols-4 text-center text-xs font-semibold text-slate-500">
+      <button onclick="switchTab('dashboard')" id="nav-dashboard" class="py-2.5 tab-active flex flex-col items-center gap-1">
+        <i class="fa-solid fa-house text-lg"></i><span>Home</span>
+      </button>
+      <button onclick="switchTab('add')" id="nav-add" class="py-2.5 flex flex-col items-center gap-1">
+        <i class="fa-solid fa-circle-plus text-lg"></i><span>New Order</span>
+      </button>
+      <button onclick="switchTab('calendar')" id="nav-calendar" class="py-2.5 flex flex-col items-center gap-1">
+        <i class="fa-solid fa-calendar-days text-lg"></i><span>Calendar</span>
+      </button>
+      <button onclick="switchTab('offers')" id="nav-offers" class="py-2.5 flex flex-col items-center gap-1">
+        <i class="fa-solid fa-bullhorn text-lg"></i><span>Offers</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- FULLSCREEN BILL IMAGE MODAL -->
+  <div id="billModal" class="hidden fixed inset-0 bg-black/90 z-50 flex flex-col justify-between p-4">
+    <div class="flex justify-between items-center text-white">
+      <h3 id="billModalTitle" class="font-bold text-base">Customer Bill</h3>
+      <button onclick="closeBillModal()" class="px-3 py-1.5 bg-white/20 rounded-lg text-sm font-bold">✕ Close</button>
+    </div>
+    <div class="flex-1 flex items-center justify-center overflow-auto my-2">
+      <img id="billModalImg" src="" class="max-h-full max-w-full rounded-lg object-contain" />
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl">
+      <h3 class="text-lg font-bold text-slate-800">Boutique App Settings</h3>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">Boutique Name</label>
+        <input type="text" id="settingBoutiqueName" placeholder="e.g. Royal Silk Boutique" class="w-full p-3 border border-slate-300 rounded-xl text-sm" />
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1">Google Apps Script Web App URL *</label>
+        <input type="url" id="settingScriptUrl" placeholder="https://script.google.com/macros/s/..." class="w-full p-3 border border-slate-300 rounded-xl text-sm" />
+        <p class="text-[11px] text-slate-500 mt-1">Paste the Web App URL deployed from your Google Sheet.</p>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="closeSettings()" class="flex-1 py-2.5 bg-slate-200 text-slate-700 font-bold rounded-xl text-sm">Cancel</button>
+        <button onclick="saveSettings()" class="flex-1 py-2.5 bg-pink-700 text-white font-bold rounded-xl text-sm">Save & Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== STATE & CONFIG ====================
+    let allOrders = [];
+    let currentFilter = 'all';
+    let compressedBase64Image = '';
+    let offerQueue = [];
+    let offerIndex = 0;
+
+    const STATUS_COLORS = {
+      'Pending': 'bg-red-100 text-red-800 border-red-300',
+      'Stitching': 'bg-amber-100 text-amber-800 border-amber-300',
+      'Trial Ready': 'bg-blue-100 text-blue-800 border-blue-300',
+      'Alteration': 'bg-purple-100 text-purple-800 border-purple-300',
+      'Delivered': 'bg-emerald-100 text-emerald-800 border-emerald-300'
+    };
+
+    // ==================== INITIALIZATION ====================
+    window.onload = () => {
+      const savedName = localStorage.getItem('btq_name') || 'My Boutique';
+      const savedUrl = localStorage.getItem('btq_script_url') || '';
+      document.getElementById('headerBoutiqueName').innerText = savedName;
+      document.getElementById('settingBoutiqueName').value = savedName;
+      document.getElementById('settingScriptUrl').value = savedUrl;
+
+      setOfferTemplate('festive');
+
+      if (!savedUrl) {
+        openSettings();
+        document.getElementById('ordersList').innerHTML = `
+          <div class="bg-amber-50 border border-amber-200 p-5 rounded-xl text-center space-y-2">
+            <p class="font-bold text-amber-900">Google Sheet Not Connected Yet</p>
+            <p class="text-xs text-amber-800">Tap the Settings icon (⚙️) above and paste your Google Apps Script URL to start.</p>
+          </div>`;
+      } else {
+        fetchOrders();
+      }
+    };
+
+    // ==================== NAVIGATION ====================
+    function switchTab(tabName) {
+      ['dashboard', 'add', 'calendar', 'offers'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.add('hidden');
+        document.getElementById(`nav-${t}`).classList.remove('tab-active');
+      });
+      document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+      document.getElementById(`nav-${tabName}`).classList.add('tab-active');
+
+      if (tabName === 'calendar') renderCalendarAgenda();
+      if (tabName === 'offers') prepareOfferQueue('all');
+    }
+
+    function openSettings() { document.getElementById('settingsModal').classList.remove('hidden'); }
+    function closeSettings() { document.getElementById('settingsModal').classList.add('hidden'); }
+
+    function saveSettings() {
+      const name = document.getElementById('settingBoutiqueName').value.trim() || 'My Boutique';
+      const url = document.getElementById('settingScriptUrl').value.trim();
+      localStorage.setItem('btq_name', name);
+      localStorage.setItem('btq_script_url', url);
+      document.getElementById('headerBoutiqueName').innerText = name;
+      closeSettings();
+      if (url) fetchOrders();
+    }
+
+    // ==================== FETCH DATA FROM GOOGLE SHEETS ====================
+    async function fetchOrders() {
+      const url = localStorage.getItem('btq_script_url');
+      if (!url) return;
+
+      const icon = document.getElementById('refreshIcon');
+      const statusEl = document.getElementById('syncStatus');
+      icon.classList.add('fa-spin');
+      statusEl.innerText = 'Syncing with Google Sheet...';
+
+      try {
+        const res = await fetch(url);
+        const json = await res.json();
+        if (json.status === 'success') {
+          allOrders = json.data.reverse(); // Newest first
+          updateDashboardKPIs();
+          renderOrders();
+          statusEl.innerText = `Synced • ${allOrders.length} Orders`;
+        }
+      } catch (err) {
+        statusEl.innerText = 'Sync Error - Check URL';
+        alert('Could not fetch data. Make sure your Apps Script is deployed as "Anyone".');
+      } finally {
+        icon.classList.remove('fa-spin');
+      }
+    }
+
+    // ==================== KPI & GALLA CALCULATIONS ====================
+    function getUniqueCustomersMap() {
+      const map = {};
+      allOrders.forEach(o => {
+        const cleanPhone = String(o.Phone).replace(/\D/g, '').slice(-10);
+        if (!cleanPhone) return;
+        if (!map[cleanPhone]) {
+          map[cleanPhone] = { name: o.Name, phone: cleanPhone, count: 0, latestMonth: o.MonthYear };
+        }
+        map[cleanPhone].count += 1;
+      });
+      return map;
+    }
+
+    function updateDashboardKPIs() {
+      const now = new Date();
+      const currentMonthStr = now.toISOString().slice(0, 7); // YYYY-MM
+      const todayStr = now.toISOString().slice(0, 10);
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+      const custMap = getUniqueCustomersMap();
+      const uniquePhones = Object.keys(custMap);
+
+      const monthCustCount = uniquePhones.filter(p => custMap[p].latestMonth === currentMonthStr).length;
+      const regularCustCount = uniquePhones.filter(p => custMap[p].count >= 2).length;
+
+      let urgentCount = 0;
+      let todayAdvance = 0;
+      let totalPendingBal = 0;
+
+      allOrders.forEach(o => {
+        const delDate = String(o.DeliveryDate).slice(0, 10);
+        const orderDate = String(o.Date).slice(0, 10);
+        if (o.Status !== 'Delivered' && delDate && delDate <= tomorrowStr) urgentCount++;
+        if (orderDate === todayStr) todayAdvance += Number(o.Advance || 0);
+        if (o.Status !== 'Delivered') totalPendingBal += Number(o.Balance || 0);
+      });
+
+      document.getElementById('kpiTotal').innerText = uniquePhones.length;
+      document.getElementById('kpiMonth').innerText = monthCustCount;
+      document.getElementById('kpiRegular').innerText = regularCustCount;
+      document.getElementById('kpiUrgent').innerText = urgentCount;
+      document.getElementById('gallaToday').innerText = `₹${todayAdvance.toLocaleString('en-IN')}`;
+      document.getElementById('gallaPending').innerText = `₹${totalPendingBal.toLocaleString('en-IN')}`;
+    }
+
+    // ==================== RENDER CUSTOMER CARDS ====================
+    function filterList(type) {
+      currentFilter = type;
+      document.querySelectorAll('.filter-pill').forEach(btn => {
+        btn.classList.remove('bg-pink-700', 'text-white');
+        btn.classList.add('bg-white', 'text-slate-700');
+      });
+      const activePill = document.getElementById(`pill-${type}`);
+      if (activePill) {
+        activePill.classList.remove('bg-white', 'text-slate-700');
+        activePill.classList.add('bg-pink-700', 'text-white');
+      }
+      renderOrders();
+    }
+
+    function renderOrders() {
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+      const custMap = getUniqueCustomersMap();
+      const currentMonthStr = new Date().toISOString().slice(0, 7);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+      const filtered = allOrders.filter(o => {
+        const cleanPhone = String(o.Phone).replace(/\D/g, '').slice(-10);
+        const isRegular = custMap[cleanPhone] && custMap[cleanPhone].count >= 2;
+        const delDate = String(o.DeliveryDate).slice(0, 10);
+
+        if (currentFilter === 'regular' && !isRegular) return false;
+        if (currentFilter === 'month' && o.MonthYear !== currentMonthStr) return false;
+        if (currentFilter === 'urgent' && !(o.Status !== 'Delivered' && delDate && delDate <= tomorrowStr)) return false;
+        if (currentFilter === 'pendingBal' && Number(o.Balance || 0) <= 0) return false;
+
+        if (query) {
+          const matchName = String(o.Name).toLowerCase().includes(query);
+          const matchPhone = cleanPhone.includes(query);
+          const matchId = String(o.ID).toLowerCase().includes(query);
+          return matchName || matchPhone || matchId;
+        }
+        return true;
+      });
+
+      const container = document.getElementById('ordersList');
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="text-center py-10 text-slate-400 bg-white rounded-xl border border-slate-200">No matching orders found.</div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.map(o => {
+        const cleanPhone = String(o.Phone).replace(/\D/g, '').slice(-10);
+        const isRegular = custMap[cleanPhone] && custMap[cleanPhone].count >= 2;
+        const statusClass = STATUS_COLORS[o.Status] || 'bg-slate-100 text-slate-800';
+        const delDateFormatted = o.DeliveryDate ? String(o.DeliveryDate).slice(0, 10) : 'Not set';
+        const hasBill = o.BillImageURL && String(o.BillImageURL).startsWith('http');
+
+        return `
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-3">
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-xs font-bold text-slate-400">#${o.ID}</span>
+                <h3 class="font-bold text-base text-slate-900">${o.Name}</h3>
+                ${isRegular ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-extrabold rounded-full">⭐ REGULAR</span>' : ''}
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5"><i class="fa-solid fa-shirt text-pink-500 mr-1"></i> <strong>${o.Garment}</strong> • Due: <strong class="text-slate-700">${delDateFormatted}</strong></p>
+              ${o.Notes ? `<p class="text-xs text-slate-600 bg-slate-50 p-1.5 rounded-lg mt-1.5 border border-slate-100">📝 ${o.Notes}</p>` : ''}
+            </div>
+
+            <!-- BILL THUMBNAIL BUTTON FOR NON-TECHNICAL VIEW -->
+            ${hasBill ? `
+              <button onclick="openBillModal('${o.BillImageURL}', '${o.Name} (#${o.ID})')" class="shrink-0 w-16 h-16 rounded-xl border-2 border-pink-300 overflow-hidden relative group shadow-sm" title="Tap to view bill">
+                <img src="${o.BillImageURL}" class="w-full h-full object-cover" />
+                <span class="absolute bottom-0 inset-x-0 bg-black/70 text-white text-[9px] font-bold py-0.5 text-center">VIEW BILL</span>
+              </button>
+            ` : `
+              <div class="shrink-0 w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center text-slate-400 text-[10px]">
+                <i class="fa-solid fa-receipt text-sm mb-0.5"></i>No Bill
+              </div>
+            `}
+          </div>
+
+          <!-- PAYMENT & STATUS ROW -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <div class="text-xs">
+              <span class="text-slate-500">Total: ₹${o.Total}</span> • 
+              <span class="font-bold ${Number(o.Balance) > 0 ? 'text-red-600' : 'text-emerald-600'}">
+                ${Number(o.Balance) > 0 ? `Due: ₹${o.Balance}` : 'Paid Full ✓'}
+              </span>
+            </div>
+
+            <select onchange="updateOrderStatus('${o.ID}', this.value)" class="text-xs font-bold px-2.5 py-1.5 rounded-lg border ${statusClass} focus:outline-none">
+              ${['Pending', 'Stitching', 'Trial Ready', 'Alteration', 'Delivered'].map(st => 
+                `<option value="${st}" ${o.Status === st ? 'selected' : ''}>${st}</option>`
+              ).join('')}
+            </select>
+          </div>
+
+          <!-- 1-CLICK ACTION BUTTONS (WHATSAPP & CALL) -->
+          <div class="grid grid-cols-3 gap-2 pt-1">
+            <button onclick="sendWhatsAppUpdate('${o.ID}')" class="col-span-2 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <i class="fa-brands fa-whatsapp text-base"></i> WhatsApp Status
+            </button>
+            <a href="tel:+91${cleanPhone}" class="py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1">
+              <i class="fa-solid fa-phone"></i> Call
+            </a>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ==================== ADD NEW ORDER & IMAGE COMPRESSION ====================
+    function calcBalance() {
+      const total = Number(document.getElementById('custTotal').value || 0);
+      const adv = Number(document.getElementById('custAdvance').value || 0);
+      document.getElementById('custBalance').value = `₹${Math.max(0, total - adv)}`;
+    }
+
+    function handleImageSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          // Compress image to max 900px width so upload to Google Drive is fast
+          const canvas = document.createElement('canvas');
+          const maxW = 900;
+          const scale = Math.min(1, maxW / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          compressedBase64Image = canvas.toDataURL('image/jpeg', 0.75);
+
+          document.getElementById('photoPreview').src = compressedBase64Image;
+          document.getElementById('photoPreview').classList.remove('hidden');
+          document.getElementById('photoPlaceholder').classList.add('hidden');
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function startVoiceInput() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert('Voice typing is not supported in this browser. Please use Chrome.');
+        return;
+      }
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      const micBtn = document.getElementById('micBtn');
+      micBtn.classList.add('bg-red-500', 'text-white');
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        const notesInput = document.getElementById('custNotes');
+        notesInput.value = (notesInput.value + ' ' + transcript).trim();
+      };
+      recognition.onend = () => micBtn.classList.remove('bg-red-500', 'text-white');
+      recognition.start();
+    }
+
+    async function submitNewOrder(e) {
+      e.preventDefault();
+      const url = localStorage.getItem('btq_script_url');
+      if (!url) return openSettings();
+
+      const btn = document.getElementById('saveOrderBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Saving Bill & Syncing Calendar...';
+
+      const payload = {
+        action: 'addOrder',
+        name: document.getElementById('custName').value.trim(),
+        phone: '91' + document.getElementById('custPhone').value.trim(),
+        garment: document.getElementById('custGarment').value.trim(),
+        deliveryDate: document.getElementById('custDelivery').value,
+        total: document.getElementById('custTotal').value,
+        advance: document.getElementById('custAdvance').value,
+        status: 'Pending',
+        notes: document.getElementById('custNotes').value.trim(),
+        billImageBase64: compressedBase64Image
+      };
+
+      try {
+        await fetch(url, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        document.getElementById('addOrderForm').reset();
+        compressedBase64Image = '';
+        document.getElementById('photoPreview').classList.add('hidden');
+        document.getElementById('photoPlaceholder').classList.remove('hidden');
+        await fetchOrders();
+        switchTab('dashboard');
+      } catch (err) {
+        alert('Error saving order. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Save Order & Sync Calendar';
+      }
+    }
+
+    // ==================== STATUS UPDATE & 1-CLICK WHATSAPP ====================
+    async function updateOrderStatus(orderId, newStatus) {
+      const url = localStorage.getItem('btq_script_url');
+      const order = allOrders.find(o => o.ID === orderId);
+      if (order) order.Status = newStatus;
+      updateDashboardKPIs();
+      renderOrders();
+
+      if (url) {
+        fetch(url, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'updateStatus', id: orderId, status: newStatus })
+        });
+      }
+    }
+
+    function sendWhatsAppUpdate(orderId) {
+      const o = allOrders.find(item => item.ID === orderId);
+      if (!o) return;
+      const boutique = localStorage.getItem('btq_name') || 'Our Boutique';
+      const phone = String(o.Phone).replace(/\D/g, '');
+      const fullPhone = phone.length === 10 ? '91' + phone : phone;
+
+      const msg = `Namaste ${o.Name}! 🌸\nYour *${o.Garment}* order (#${o.ID}) at *${boutique}* is now *${o.Status.toUpperCase()}*.\nDelivery Date: ${String(o.DeliveryDate).slice(0, 10)}\nBalance Due: ₹${o.Balance}\nThank you for choosing us!`;
+
+      window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+
+    // ==================== CALENDAR AGENDA VIEW ====================
+    function renderCalendarAgenda() {
+      const container = document.getElementById('calendarAgendaList');
+      const upcoming = allOrders
+        .filter(o => o.Status !== 'Delivered' && o.DeliveryDate)
+        .sort((a, b) => String(a.DeliveryDate).localeCompare(String(b.DeliveryDate)));
+
+      if (upcoming.length === 0) {
+        container.innerHTML = `<div class="bg-white p-6 rounded-2xl text-center text-slate-400 border border-slate-200">No pending deliveries scheduled.</div>`;
+        return;
+      }
+
+      container.innerHTML = upcoming.map(o => `
+        <div class="bg-white p-3.5 rounded-xl border-l-4 border-pink-600 shadow-sm flex justify-between items-center">
+          <div>
+            <span class="text-xs font-extrabold text-pink-700 uppercase">${String(o.DeliveryDate).slice(0, 10)}</span>
+            <h4 class="font-bold text-slate-900">${o.Name} — ${o.Garment}</h4>
+            <p class="text-xs text-slate-500">Status: <strong>${o.Status}</strong> • Due: ₹${o.Balance}</p>
+          </div>
+          <button onclick="sendWhatsAppUpdate('${o.ID}')" class="p-2.5 bg-green-100 text-green-700 rounded-xl hover:bg-green-200">
+            <i class="fa-brands fa-whatsapp text-lg"></i>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    // ==================== BULK / GROUP OFFER QUEUE ====================
+    function setOfferTemplate(type) {
+      const boutique = localStorage.getItem('btq_name') || 'our boutique';
+      const templates = {
+        festive: `Namaste {name}! ✨ Festive Special at *${boutique}*! Get FLAT 20% OFF on designer blouse & suit stitching this week. Book your slot today!`,
+        wedding: `Namaste {name}! 💍 Wedding Season Offer at *${boutique}*: Free custom latkan & fall-pico with every Lehenga or Bridal Blouse order!`,
+        newstock: `Namaste {name}! 👗 Fresh designer fabrics & boutique suits have just arrived at *${boutique}*. Visit us soon to pick your favorite design!`
+      };
+      document.getElementById('offerMessageBox').value = templates[type];
+    }
+
+    function prepareOfferQueue(audienceType) {
+      document.querySelectorAll('.aud-btn').forEach(b => {
+        b.classList.remove('border-2', 'border-pink-600', 'bg-pink-50', 'text-pink-800');
+        b.classList.add('border', 'border-slate-300', 'bg-white', 'text-slate-700');
+      });
+      const activeBtn = document.getElementById(`aud-${audienceType}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('border', 'border-slate-300', 'bg-white', 'text-slate-700');
+        activeBtn.classList.add('border-2', 'border-pink-600', 'bg-pink-50', 'text-pink-800');
+      }
+
+      const custMap = getUniqueCustomersMap();
+      const currentMonthStr = new Date().toISOString().slice(0, 7);
+      const list = Object.values(custMap);
+
+      if (audienceType === 'regular') {
+        offerQueue = list.filter(c => c.count >= 2);
+      } else if (audienceType === 'month') {
+        offerQueue = list.filter(c => c.latestMonth === currentMonthStr);
+      } else {
+        offerQueue = list;
+      }
+
+      offerIndex = 0;
+      updateQueueUI();
+    }
+
+    function updateQueueUI() {
+      const counter = document.getElementById('queueCounterText');
+      const currentEl = document.getElementById('queueCurrentCustomer');
+      const btn = document.getElementById('sendNextOfferBtn');
+
+      if (offerQueue.length === 0) {
+        counter.innerText = '0 Customers in this group';
+        currentEl.innerText = 'Select another audience filter above';
+        btn.disabled = true;
+        btn.classList.add('opacity-50');
+        return;
+      }
+
+      btn.disabled = false;
+      btn.classList.remove('opacity-50');
+
+      if (offerIndex >= offerQueue.length) {
+        counter.innerText = `All ${offerQueue.length} Messages Sent! 🎉`;
+        currentEl.innerText = 'Campaign completed.';
+        btn.innerHTML = 'Completed ✓';
+      } else {
+        const nextCust = offerQueue[offerIndex];
+        counter.innerText = `Progress: ${offerIndex} of ${offerQueue.length} Sent`;
+        currentEl.innerText = `Next: ${nextCust.name} (+91 ${nextCust.phone})`;
+        btn.innerHTML = `<i class="fa-brands fa-whatsapp mr-1"></i> Send to ${nextCust.name} (${offerIndex + 1}/${offerQueue.length})`;
+      }
+    }
+
+    function sendNextOffer() {
+      if (offerIndex >= offerQueue.length) return;
+      const cust = offerQueue[offerIndex];
+      const rawMsg = document.getElementById('offerMessageBox').value;
+      const personalizedMsg = rawMsg.replace(/\{name\}/gi, cust.name);
+
+      window.open(`https://wa.me/91${cust.phone}?text=${encodeURIComponent(personalizedMsg)}`, '_blank');
+      offerIndex++;
+      updateQueueUI();
+    }
+
+    function resetOfferQueue() {
+      offerIndex = 0;
+      updateQueueUI();
+    }
+
+    // ==================== BILL IMAGE MODAL ====================
+    function openBillModal(imgUrl, title) {
+      document.getElementById('billModalTitle').innerText = title;
+      document.getElementById('billModalImg').src = imgUrl;
+      document.getElementById('billModal').classList.remove('hidden');
+    }
+
+    function closeBillModal() {
+      document.getElementById('billModal').classList.add('hidden');
+      document.getElementById('billModalImg').src = '';
+    }
+  </script>
+</body>
+</html>
