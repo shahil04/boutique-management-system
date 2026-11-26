@@ -35,6 +35,7 @@ interface OrderDetailDrawerProps {
   onChangeStatus: (orderId: number, status: OrderStatus) => Promise<void>;
   onDelete: (orderId: number) => Promise<void>;
   onPrint: (order: BoutiqueOrder) => void;
+  onSendReceipt: (order: BoutiqueOrder) => void;
   onOpenCustomer?: (order: BoutiqueOrder) => void;
   onAppendForCustomer?: (order: BoutiqueOrder) => void;
 }
@@ -48,6 +49,7 @@ export default function OrderDetailDrawer({
   onChangeStatus,
   onDelete,
   onPrint,
+  onSendReceipt,
   onOpenCustomer,
   onAppendForCustomer,
 }: OrderDetailDrawerProps) {
@@ -184,11 +186,14 @@ export default function OrderDetailDrawer({
               <div className="flex items-center gap-2">
                 <MessageCircle className="h-4 w-4 text-emerald-700" />
                 <h3 className="text-sm font-semibold text-emerald-950">
-                  One-Tap WhatsApp Updates
+                  WhatsApp Messages
                 </h3>
               </div>
               <span className="text-xs text-emerald-800">{order.phone}</span>
             </div>
+            <p className="mb-2.5 text-[11px] text-emerald-900">
+              Send receipts only to customers who opted in to WhatsApp messages.
+            </p>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -200,11 +205,11 @@ export default function OrderDetailDrawer({
               </button>
               <button
                 type="button"
-                onClick={() => onPrint(order)}
+                onClick={() => onSendReceipt(order)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-white px-3.5 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
               >
                 <MessageCircle className="h-3.5 w-3.5" />
-                Digital Receipt (PDF)
+                Send Receipt PDF
               </button>
               <button
                 type="button"

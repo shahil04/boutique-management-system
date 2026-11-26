@@ -16,6 +16,7 @@ import {
   normalizePhoneKey,
 } from "./types";
 
+// Local development adapter; production persistence is provided by Supabase.
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "boutique.db");
 

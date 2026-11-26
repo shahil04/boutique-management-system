@@ -39,6 +39,7 @@ description: >
 | **Icons** | lucide-react | ^1.80.0 | |
 | **Database** | SQLite | Built-in `node:sqlite` | Node.js 24+ native module, WAL mode |
 | **AI/OCR** | Google Gemini API | `@google/genai` ^3.6.1 | Vision OCR with structured JSON output |
+| **Receipt PDF** | `html2canvas-pro` + `jspdf` | npm dependencies | Renders full receipt and attachments to PDF; supports modern CSS colors |
 | **Fonts** | Plus Jakarta Sans, Noto Sans Devanagari, Geist Mono | Google Fonts | Latin + Devanagari script support |
 
 ### Runtime Requirements
@@ -54,13 +55,26 @@ description: >
 ```env
 GEMINI_API_KEY=<your-gemini-api-key>
 GEMINI_MODEL=gemini-3.5-flash
+WHATSAPP_ACCESS_TOKEN=<your-whatsapp-cloud-api-token>
+WHATSAPP_PHONE_NUMBER_ID=<your-business-phone-number-id>
+WHATSAPP_GRAPH_API_VERSION=v27.0
+# Optional approved utility template with a document header:
+WHATSAPP_RECEIPT_TEMPLATE_NAME=
+WHATSAPP_RECEIPT_TEMPLATE_LANGUAGE=en
 ```
 
 ### `.env.example` (reference template)
 ```env
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.5-flash
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_GRAPH_API_VERSION=v27.0
+WHATSAPP_RECEIPT_TEMPLATE_NAME=
+WHATSAPP_RECEIPT_TEMPLATE_LANGUAGE=en
 ```
+
+WhatsApp Cloud API tokens and phone-number IDs are server-only. Never prefix these variables with `NEXT_PUBLIC_` or expose their values in logs/client responses. Only send messages to customers who have opted in. Run this local-only app on a trusted device/network; do not expose its unauthenticated API to the public internet.
 
 ### Commands
 ```bash
@@ -230,6 +244,14 @@ On startup, `initSchema()` in `db.ts`:
 - **Model fallback chain**: `gemini-3.5-flash` → `gemini-3.8-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`
 - **Retryable errors**: AbortError, timeout, 503, 404, 429
 
+### `POST /api/orders/[id]/receipt`
+- **Body**: Multipart `file` field containing a generated PDF (maximum 10 MB)
+- **Behavior**: Resolves the order and recipient from the database, uploads the PDF to WhatsApp Cloud API media, then sends a document message to that order's phone number. The client cannot specify a different recipient.
+- **Configuration**: Requires server-only `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`; optional Graph API version defaults to `v27.0`.
+- **24-hour policy**: Without a configured template, the recipient must have an open 24-hour customer-service window. To send outside that window, configure an approved utility template with a document header using `WHATSAPP_RECEIPT_TEMPLATE_NAME` and `WHATSAPP_RECEIPT_TEMPLATE_LANGUAGE`.
+- **Consent**: The customer must have opted in to WhatsApp messages before staff sends a receipt.
+- **Media retention**: Uploaded Cloud API media may be retained by Meta for up to 30 days; consider this before sending sensitive order details.
+
 ### `POST /api/upload`
 - **Body**: Multipart `file` field OR JSON `{ dataUrl: "data:image/...;base64,...", prefix?: string }`
 - **Response**: `{ url: string, filename: string }`
@@ -381,7 +403,8 @@ page.tsx (Server Component)
 - Formatted printable tailoring slip with shop branding
 - CSS `@media print` rules hide non-print elements
 - Shows measurements grid, itemized billing, payment summary
-- Generates a PDF from the complete receipt, including attached slip and design photos; supports device file sharing or download plus a WhatsApp draft
+- Generates a PDF from the complete receipt, including attached slip and design photos, using `html2canvas-pro` and `jspdf`
+- Sends the PDF directly to the order's saved WhatsApp number through `/api/orders/[id]/receipt`; download and print remain available
 
 ---
 
@@ -482,6 +505,15 @@ Opens `https://wa.me/<91phone>?text=<encoded-message>` in new tab.
 - Badges: `rounded-full px-2.5 py-0.5 text-[11px] font-semibold`
 - Stage badges use `STAGE_BADGE` color map per status
 
+### Mobile-First Responsive Requirement
+- This is a mobile-first app used by boutique staff on phones. Every new or changed user-facing feature must remain fully usable at narrow phone widths; responsiveness is a release requirement, not optional polish.
+- Follow Tailwind's mobile-first approach: base classes must work on small screens, then use `sm:`, `md:`, and `lg:` to progressively enhance wider layouts.
+- Keep forms, dialogs/drawers, navigation, cards, buttons, images, measurements, and billing readable and reachable on a phone. Allow appropriate wrapping/stacking and keep modal content and primary actions within the viewport.
+- Do not hide important content or controls to fix mobile layout. Give tables and wide boards an intentional compact or scrollable treatment.
+- After every UI change, check the page and each affected interactive surface at **360×800**, **390×844**, **768×1024**, and a desktop viewport such as **1366×768**. Include relevant open dialogs/drawers and the changed workflow, not only the initial page.
+- At each viewport, check for document-level horizontal overflow, clipped or overlapping content, inaccessible primary actions, unreadable text, overflowing images, and unusable input controls. Fix regressions before finishing.
+- Prefer a real browser at the target viewport sizes. If browser validation is unavailable, inspect responsive classes/layout carefully and state that runtime viewport verification was not performed; do not claim a responsive check passed without measuring it.
+
 ---
 
 ## 12. Conventions & Patterns for Adding Features
@@ -508,11 +540,20 @@ Opens `https://wa.me/<91phone>?text=<encoded-message>` in new tab.
 4. Follow the design system colors/patterns above
 5. Wire into `BoutiqueApp.tsx` (state + render + modal/drawer management)
 6. For modals: use React `key` prop for re-initialization instead of `useEffect` reset
+7. Verify mobile responsiveness at every viewport listed in [Mobile-First Responsive Requirement](#mobile-first-responsive-requirement), including the new component's open/active state
 
 ### Important ESLint Rules
 - **No `setState` in `useEffect`** (`react-hooks/set-state-in-effect`): Initialize state from props directly, use `key` prop on modals
 - **No `<img>` in Next.js** (`@next/next/no-img-element`): Use `next/image` or add eslint-disable comment for user-uploaded images
 - **No unused variables**: Prefix with `_` if intentionally unused
+
+### UI Change Validation
+For every UI feature or layout update:
+1. Run through the changed user journey in a browser at 360×800, 390×844, 768×1024, and 1366×768.
+2. Measure `document.documentElement.scrollWidth` against the viewport width at each size; there must be no unexpected horizontal page scrolling.
+3. Open and inspect any affected modal, drawer, menu, or other interactive state on mobile sizes.
+4. Confirm essential details and actions remain visible, text wraps, and controls can be comfortably used without clipping or overlap.
+5. Fix any issues found before reporting the change complete.
 
 ### Next.js 16 Specifics
 - Root layout uses `LayoutProps<"/">` type
@@ -612,6 +653,7 @@ Each has realistic Hindi+English measurements and billing items.
 | Modify the dashboard UI | `src/components/BoutiqueApp.tsx` |
 | Change WhatsApp message format | `src/lib/types.ts` → `buildWhatsAppMessage()` |
 | Modify print receipt layout | `src/components/PrintReceiptModal.tsx` |
+| Send receipt PDF via WhatsApp Cloud API | `src/components/PrintReceiptModal.tsx`, `src/app/api/orders/[id]/receipt/route.ts`, server environment variables |
 | Change theme colors | `src/app/globals.css` (CSS vars), component files (Tailwind classes) |
 | Update shop default settings | `src/lib/db.ts` → `initSchema()` defaults |
 | Add customer fields | `src/lib/types.ts` (CustomerSummary), `src/lib/db.ts` (customers table + migration), `src/components/CustomerDetailDrawer.tsx` |

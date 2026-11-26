@@ -1,134 +1,200 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import React, { useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { MessageCircle, Printer, X } from "lucide-react";
+import html2canvas from "html2canvas-pro";
+import { jsPDF } from "jspdf";
 import {
   BoutiqueOrder,
   MEASUREMENT_FIELDS,
   ShopSettings,
-  buildWhatsAppMessage,
-  buildWhatsAppUrl,
   formatINR,
 } from "@/lib/types";
 
 interface PrintReceiptModalProps {
   order: BoutiqueOrder | null;
   settings: ShopSettings;
+  autoSend?: boolean;
   onClose: () => void;
 }
 
 export default function PrintReceiptModal({
   order,
   settings,
+  autoSend = false,
   onClose,
 }: PrintReceiptModalProps) {
   const receiptRef = useRef<HTMLDivElement | null>(null);
+  const autoSendStartedRef = useRef(false);
   const [sharing, setSharing] = useState(false);
   const [shareMessage, setShareMessage] = useState("");
 
-  if (!order) return null;
-
-  const createReceiptPdf = async (): Promise<File> => {
+  const createReceiptPdf = useCallback(async (): Promise<File> => {
+    if (!order) {
+      throw new Error("Receipt is not ready to export.");
+    }
     const receipt = receiptRef.current;
     if (!receipt) {
       throw new Error("Receipt is not ready to export.");
     }
 
     const images = Array.from(receipt.querySelectorAll("img"));
-    if (images.some((image) => !image.complete || image.naturalWidth === 0)) {
-      throw new Error("Wait for all receipt photos to load, then try again.");
+    await Promise.all(
+      images.map(
+        (image) =>
+          new Promise<void>((resolve, reject) => {
+            if (image.complete) {
+              if (image.naturalWidth > 0) resolve();
+              else reject(new Error("A receipt photo could not be loaded."));
+              return;
+            }
+            image.addEventListener("load", () => resolve(), { once: true });
+            image.addEventListener(
+              "error",
+              () => reject(new Error("A receipt photo could not be loaded.")),
+              { once: true }
+            );
+          })
+      )
+    );
+
+    const canvas = await html2canvas(receipt, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      scrollX: 0,
+      scrollY: 0,
+      windowHeight: Math.max(window.innerHeight, receipt.scrollHeight + 200),
+      onclone: (clonedDocument, clonedReceipt) => {
+        let parent = clonedReceipt.parentElement;
+        while (parent && parent !== clonedDocument.body) {
+          parent.style.maxHeight = "none";
+          parent.style.overflow = "visible";
+          parent = parent.parentElement;
+        }
+      },
+    });
+
+    const margin = 8;
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const contentWidth = pageWidth - margin * 2;
+    const contentHeight = pageHeight - margin * 2;
+    const sourcePageHeight = Math.floor(
+      (contentHeight * canvas.width) / contentWidth
+    );
+    const pageCanvas = document.createElement("canvas");
+    const pageContext = pageCanvas.getContext("2d");
+    if (!pageContext) {
+      throw new Error("Could not prepare the receipt PDF.");
     }
 
-    const { default: html2pdf } = await import("html2pdf.js");
+    pageCanvas.width = canvas.width;
+    const pageCount = Math.ceil(canvas.height / sourcePageHeight);
+    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+      const sourceY = pageIndex * sourcePageHeight;
+      const sliceHeight = Math.min(sourcePageHeight, canvas.height - sourceY);
+      pageCanvas.height = sliceHeight;
+      pageContext.fillStyle = "#ffffff";
+      pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+      pageContext.drawImage(
+        canvas,
+        0,
+        sourceY,
+        canvas.width,
+        sliceHeight,
+        0,
+        0,
+        canvas.width,
+        sliceHeight
+      );
+
+      if (pageIndex > 0) pdf.addPage();
+      const renderedHeight = (sliceHeight * contentWidth) / canvas.width;
+      pdf.addImage(
+        pageCanvas.toDataURL("image/jpeg", 0.96),
+        "JPEG",
+        margin,
+        margin,
+        contentWidth,
+        renderedHeight
+      );
+    }
+
     const filename = `tailoring-receipt-${order.serial_no.replace(
       /[^a-zA-Z0-9_-]/g,
       "-"
     )}.pdf`;
-    const pdf = await html2pdf()
-      .set({
-        margin: 8,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: "#ffffff",
-        },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      })
-      .from(receipt)
-      .outputPdf("blob");
-
-    if (!(pdf instanceof Blob)) {
-      throw new Error("Could not generate the receipt PDF.");
-    }
-
-    return new File([pdf], filename, { type: "application/pdf" });
-  };
-
-  const handleSharePdf = async () => {
-    setSharing(true);
-    setShareMessage("");
-
-    const message = buildWhatsAppMessage(order, settings.shop_name, "receipt");
-    const testFile = new File([""], "receipt.pdf", {
+    return new File([pdf.output("blob")], filename, {
       type: "application/pdf",
     });
-    const canShareFile = (() => {
-      try {
-        return (
-          typeof navigator.share === "function" &&
-          typeof navigator.canShare === "function" &&
-          navigator.canShare({ files: [testFile] })
-        );
-      } catch {
-        return false;
-      }
-    })();
-    const whatsappWindow = canShareFile
-      ? null
-      : window.open(
-          buildWhatsAppUrl(
-            order.phone,
-            `${message}\n\nPlease find the PDF receipt attached.`
-          ),
-          "_blank"
-        );
-    if (whatsappWindow) {
-      whatsappWindow.opener = null;
-    }
+  }, [order]);
 
+  const handleSendPdf = useCallback(async () => {
+    if (!order) return;
+
+    setSharing(true);
+    setShareMessage("");
     try {
       const file = await createReceiptPdf();
-
-      if (canShareFile) {
-        await navigator.share({
-          files: [file],
-          title: `Tailoring Receipt #${order.serial_no}`,
-          text: message,
-        });
-        setShareMessage("Choose WhatsApp and select the customer to send the PDF.");
-      } else {
-        const downloadUrl = URL.createObjectURL(file);
-        const link = document.createElement("a");
-        link.href = downloadUrl;
-        link.download = file.name;
-        link.click();
-        window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 60_000);
-        setShareMessage(
-          whatsappWindow
-            ? "PDF downloaded. Attach it to the WhatsApp message that opened."
-            : "PDF downloaded. WhatsApp could not be opened automatically; attach the PDF in the customer's chat."
-        );
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch(`/api/orders/${order.id}/receipt`, {
+        method: "POST",
+        body,
+      });
+      const result = (await response.json()) as {
+        sent?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !result.sent) {
+        throw new Error(result.error || "Could not send the receipt PDF.");
       }
+      setShareMessage(`PDF sent to ${order.phone} on WhatsApp.`);
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        setShareMessage("PDF sharing was cancelled.");
-      } else {
-        setShareMessage(
-          error instanceof Error ? error.message : "Could not share the receipt PDF."
-        );
-      }
+      setShareMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not send the receipt PDF."
+      );
+    } finally {
+      setSharing(false);
+    }
+  }, [createReceiptPdf, order]);
+
+  useEffect(() => {
+    if (!autoSend) {
+      autoSendStartedRef.current = false;
+      return;
+    }
+    if (!order || autoSendStartedRef.current) return;
+
+    autoSendStartedRef.current = true;
+    void handleSendPdf();
+  }, [autoSend, handleSendPdf, order]);
+
+  if (!order) return null;
+
+  const handleDownloadPdf = async () => {
+    setSharing(true);
+    setShareMessage("");
+    try {
+      const file = await createReceiptPdf();
+      const downloadUrl = URL.createObjectURL(file);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = file.name;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 60_000);
+      setShareMessage("Receipt PDF downloaded.");
+    } catch (error) {
+      setShareMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not create the receipt PDF."
+      );
     } finally {
       setSharing(false);
     }
@@ -144,12 +210,20 @@ export default function PrintReceiptModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => void handleSharePdf()}
+              onClick={() => void handleSendPdf()}
               disabled={sharing}
               className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60"
             >
               <MessageCircle className="h-4 w-4" />
-              {sharing ? "Preparing PDF..." : "Share PDF"}
+              {sharing ? "Sending PDF..." : "Send PDF on WhatsApp"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDownloadPdf()}
+              disabled={sharing}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[#e6ddd0] bg-white px-3 py-1.5 text-xs font-semibold text-[#4a4043] hover:bg-[#faf7f2] disabled:opacity-60"
+            >
+              Download PDF
             </button>
             <button
               type="button"
@@ -169,12 +243,19 @@ export default function PrintReceiptModal({
         </div>
 
         {shareMessage && (
-          <p
+          <div
             role="status"
             className="no-print border-b border-[#e6ddd0] bg-[#faf7f2] px-5 py-2 text-xs text-[#4a4043]"
           >
-            {shareMessage}
-          </p>
+            <p>{shareMessage}</p>
+            {shareMessage && (
+              <p className="mt-1 text-[11px] text-[#6d6265]">
+                Only send receipts to customers who have opted in to WhatsApp
+                messages. Messages outside the 24-hour customer-service window
+                require an approved receipt template.
+              </p>
+            )}
+          </div>
         )}
 
         <div ref={receiptRef} className="bg-white p-6 text-[#1f1a1c]">

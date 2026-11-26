@@ -96,6 +96,7 @@ export default function BoutiqueApp({
   const [detailOrder, setDetailOrder] = useState<BoutiqueOrder | null>(null);
   const [detailCustomerId, setDetailCustomerId] = useState<number | null>(null);
   const [printOrder, setPrintOrder] = useState<BoutiqueOrder | null>(null);
+  const [autoSendReceipt, setAutoSendReceipt] = useState(false);
 
   // Settings form state
   const [shopNameInput, setShopNameInput] = useState(initialSettings.shop_name);
@@ -285,6 +286,11 @@ export default function BoutiqueApp({
     kind: "ready" | "receipt"
   ) => {
     e.stopPropagation();
+    if (kind === "receipt") {
+      setAutoSendReceipt(true);
+      setPrintOrder(order);
+      return;
+    }
     const msg = buildWhatsAppMessage(order, settings.shop_name, kind);
     window.open(buildWhatsAppUrl(order.phone, msg), "_blank", "noopener,noreferrer");
   };
@@ -646,12 +652,16 @@ export default function BoutiqueApp({
                               )
                             }
                             className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
-                            title="Send WhatsApp update"
+                            title={
+                              order.status === "Ready for Delivery"
+                                ? "Send WhatsApp ready notification"
+                                : "Send receipt PDF using WhatsApp Cloud API"
+                            }
                           >
                             <MessageCircle className="h-3 w-3" />
                             {order.status === "Ready for Delivery"
                               ? "Ready WA"
-                              : "WhatsApp"}
+                              : "Send PDF"}
                           </button>
                           <button
                             type="button"
@@ -985,7 +995,14 @@ export default function BoutiqueApp({
         }}
         onChangeStatus={handleStatusChange}
         onDelete={handleDeleteOrder}
-        onPrint={(order) => setPrintOrder(order)}
+        onPrint={(order) => {
+          setAutoSendReceipt(false);
+          setPrintOrder(order);
+        }}
+        onSendReceipt={(order) => {
+          setAutoSendReceipt(true);
+          setPrintOrder(order);
+        }}
         onOpenCustomer={(order) => {
           setDetailOrder(null);
           const match = customers.find(
@@ -1038,7 +1055,11 @@ export default function BoutiqueApp({
       <PrintReceiptModal
         order={printOrder}
         settings={settings}
-        onClose={() => setPrintOrder(null)}
+        autoSend={autoSendReceipt}
+        onClose={() => {
+          setPrintOrder(null);
+          setAutoSendReceipt(false);
+        }}
       />
     </div>
   );
