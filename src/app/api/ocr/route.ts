@@ -141,10 +141,10 @@ export async function POST(request: NextRequest) {
     let mimeType = "image/jpeg";
 
     if (body.slipUrl) {
-      const loaded = readUploadAsBase64(body.slipUrl);
+      const loaded = await readUploadAsBase64(body.slipUrl);
       if (!loaded) {
         return NextResponse.json(
-          { error: "Attached slip photo could not be found on disk." },
+          { error: "Attached slip photo could not be found in storage." },
           { status: 404 }
         );
       }

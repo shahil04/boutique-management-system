@@ -55,7 +55,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Invalid order ID." }, { status: 400 });
   }
 
-  const order = getOrderById(orderId);
+  const order = await getOrderById(orderId);
   if (!order) {
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const templateName = process.env.WHATSAPP_RECEIPT_TEMPLATE_NAME?.trim();
     const templateLanguage =
       process.env.WHATSAPP_RECEIPT_TEMPLATE_LANGUAGE?.trim() || "en";
-    const settings = getSettings();
+    const settings = await getSettings();
     const caption = `${settings.shop_name || "Boutique"} digital receipt #${order.serial_no}`;
     const message = templateName
       ? {

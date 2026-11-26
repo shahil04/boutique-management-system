@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
         );
       }
       const buffer = Buffer.from(await file.arrayBuffer());
-      const saved = saveUploadedBuffer(
+      const saved = await saveUploadedBuffer(
         buffer,
         file.type || "image/jpeg",
         prefix
@@ -49,7 +49,11 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const saved = saveUploadedBuffer(buffer, mimeType, body.prefix ?? "sketch");
+    const saved = await saveUploadedBuffer(
+      buffer,
+      mimeType,
+      body.prefix ?? "sketch"
+    );
     return NextResponse.json({ url: saved.url, filename: saved.filename });
   } catch (error) {
     console.error("POST /api/upload failed:", error);

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { connection, NextRequest, NextResponse } from "next/server";
 import { getCustomerById, updateCustomer } from "@/lib/db";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -10,11 +10,20 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Invalid customer ID" }, { status: 400 });
   }
 
-  const customer = getCustomerById(numId);
-  if (!customer) {
-    return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+  await connection();
+  try {
+    const customer = await getCustomerById(numId);
+    if (!customer) {
+      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    }
+    return NextResponse.json({ customer });
+  } catch (error) {
+    console.error("GET /api/customers/[id] failed:", error);
+    return NextResponse.json(
+      { error: "Failed to load customer" },
+      { status: 500 }
+    );
   }
-  return NextResponse.json({ customer });
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
@@ -31,7 +40,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       address?: string;
       notes?: string;
     };
-    const updated = updateCustomer(numId, body);
+    const updated = await updateCustomer(numId, body);
     if (!updated) {
       return NextResponse.json(
         { error: "Customer not found" },

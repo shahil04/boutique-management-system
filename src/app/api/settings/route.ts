@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { connection, NextRequest, NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/db";
 import { ShopSettings } from "@/lib/types";
 
 export async function GET() {
+  await connection();
   try {
-    const settings = getSettings();
+    const settings = await getSettings();
     const hasEnvGeminiKey = Boolean(process.env.GEMINI_API_KEY?.trim());
     return NextResponse.json({ settings, hasEnvGeminiKey });
   } catch (error) {
@@ -19,7 +20,7 @@ export async function GET() {
 export async function PATCH(request: NextRequest) {
   try {
     const body = (await request.json()) as Partial<ShopSettings>;
-    const settings = updateSettings(body);
+    const settings = await updateSettings(body);
     return NextResponse.json({ settings });
   } catch (error) {
     console.error("PATCH /api/settings failed:", error);

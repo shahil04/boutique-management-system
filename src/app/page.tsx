@@ -10,10 +10,12 @@ import {
 
 async function BoutiqueWorkspaceLoader() {
   await connection();
-  const orders = listOrders();
-  const customers = listCustomers();
-  const settings = getSettings();
-  const nextSerialNo = getNextSerialNo();
+  const [orders, customers, settings, nextSerialNo] = await Promise.all([
+    listOrders(),
+    listCustomers(),
+    getSettings(),
+    getNextSerialNo(),
+  ]);
   const hasEnvGeminiKey = Boolean(process.env.GEMINI_API_KEY?.trim());
 
   return (
