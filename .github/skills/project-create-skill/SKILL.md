@@ -14,9 +14,9 @@ Use this file as the shared project-context entry point for AI agents working in
 - **Product:** BoutiqueFlow, a boutique/tailoring order and customer manager.
 - **Main workflow:** Capture or upload a tailoring slip, optionally extract its contents with Gemini Vision OCR, verify the extracted data against the image, then save an order with measurements, billing, delivery status, and design references.
 - **Other workflows:** Search and filter orders, track due dates and order stages, manage returning customers and measurement history, print slips, and prepare WhatsApp messages.
-- **Stack:** Next.js App Router 16.4.6, React 19.3, TypeScript (strict mode), Tailwind CSS 4, Lucide icons, Node's built-in synchronous SQLite API (`node:sqlite`), and optional `@google/genai`.
-- **Persistence:** SQLite database at `data/boutique.db`; uploaded images are stored under `data/uploads/` and served through the app's file API.
-- **Runtime note:** The server needs a Node.js release that supports `node:sqlite`. This is a Node server application; do not move database or filesystem work into Edge/client code.
+- **Stack:** Next.js App Router 16.4.6, React 19.3, TypeScript (strict mode), Tailwind CSS 4, Lucide icons, AWS SDK for DynamoDB and S3, and optional `@google/genai`.
+- **Persistence:** Orders, customers, and settings use configured DynamoDB tables; uploaded images are stored in a private S3 bucket and served through the app's file API.
+- **Runtime note:** Database and filesystem work belongs on the server; do not move it into Edge/client code.
 
 ## Repository map
 
@@ -33,10 +33,10 @@ Use this file as the shared project-context entry point for AI agents working in
 | `src/components/PrintReceiptModal.tsx` | Printable tailoring slip and browser print/PDF view. |
 | `src/components/NecklineSketchModal.tsx` | Canvas-based neckline/design sketch creation and upload. |
 | `src/lib/types.ts` | Shared domain types, order stages, measurements, INR/phone/WhatsApp helpers, and delivery urgency logic. |
-| `src/lib/db.ts` | SQLite connection, schema initialization/backfill, seed data, and order/customer/settings queries and mutations. |
-| `src/lib/uploads.ts` | Upload storage, allowed image MIME/extension mapping, file resolution, and OCR image loading. |
+| `src/lib/db.ts` | DynamoDB persistence facade for order/customer/settings queries and mutations. |
+| `src/lib/db-dynamodb.ts` | DynamoDB tables, IDs, order/customer persistence, and shop settings. |
+| `src/lib/uploads.ts` | S3 upload storage, allowed image MIME/extension mapping, file resolution, and OCR image loading. |
 | `src/app/api/**/route.ts` | App Router HTTP endpoints; keep request/response behavior aligned with their client callers. |
-| `src/types/node-sqlite.d.ts` | Local TypeScript declarations for `node:sqlite`. |
 
 `public/` contains static Next.js starter SVG assets. `data/` contains runtime database and user-uploaded data; it is not source code.
 
@@ -48,8 +48,9 @@ Use this file as the shared project-context entry point for AI agents working in
 - **Customers:** Orders can link to customer records. Matching uses a normalized phone key, with a name fallback when no phone key is available. Customer edits are also propagated to linked orders.
 - **OCR state:** `none`, `ai_extracted`, or `verified`. OCR is optional; extracted data remains editable and uncertain fields should be checked against the original slip rather than treated as authoritative.
 - **Dates and currency:** Order dates are ISO `YYYY-MM-DD`; display monetary amounts using shared `formatINR`. WhatsApp links/messages are built by helpers in `types.ts`.
-- **Shop settings:** Stored in SQLite (`shop_name`, `shop_phone`, `shop_address`, `default_unit`). Defaults are initialized by `db.ts`.
-- **Initial sample data:** The database initializer may seed example orders only when the database has no orders and has not already been seeded. Do not copy sample customer details into documentation or tests as real user data.
+- **Shop settings:** Stored in the DynamoDB settings table (`shop_name`, `shop_phone`, `shop_address`, `default_unit`).
+- **Database configuration:** Set `AWS_REGION`, `DYNAMODB_ORDERS_TABLE`, `DYNAMODB_CUSTOMERS_TABLE`, and `DYNAMODB_SETTINGS_TABLE`; the AWS SDK uses the standard credential provider chain. `S3_BUCKET` configures image storage.
+- **No automatic migration or seed data:** Existing SQLite/Supabase data and local uploads are not migrated automatically. The application does not create or seed DynamoDB tables.
 
 ## HTTP API map
 
@@ -76,14 +77,14 @@ Route handlers generally return JSON and report server errors with `console.erro
 - Optional server OCR configuration: `GEMINI_API_KEY`; optional model override: `GEMINI_MODEL`. The OCR route also accepts a temporary `x-gemini-api-key` request header from the in-session settings UI.
 - Never copy, print, commit, or include actual environment values in this file, logs, examples, or responses. Refer only to variable names.
 - Do not read or modify `.env.local` unless the task specifically requires secret configuration.
-- Treat `data/boutique.db`, its SQLite sidecar files, and `data/uploads/` as live user data. Do not inspect, overwrite, reset, delete, or commit them as part of ordinary feature work. Use isolated temporary data for tests if database behavior must be exercised.
+- Do not inspect, overwrite, reset, delete, or commit customer data as part of ordinary feature work. Use isolated test resources for database behavior.
 - Do not introduce customer names, phone numbers, addresses, or actual slip images into source, docs, or fixtures.
 
 ## UI and implementation conventions
 
 - The app has a warm cream background (`#faf7f2`), deep burgundy accent (`#5b1e31`), muted gold (`#b47b2b`), rounded cards/drawers, and bilingual tailoring vocabulary. Follow nearby component patterns and keep mobile layouts usable.
 - `BoutiqueApp` and interactive modals/drawers are client components; database reads and filesystem operations belong on the server.
-- Keep shared order/customer shapes and pure formatting/business helpers in `src/lib/types.ts`; keep SQLite persistence in `src/lib/db.ts`; keep upload filesystem helpers in `src/lib/uploads.ts`.
+- Keep shared order/customer shapes and pure formatting/business helpers in `src/lib/types.ts`; keep DynamoDB persistence in `src/lib/db-dynamodb.ts`; keep S3 upload helpers in `src/lib/uploads.ts`.
 - Use the `@/*` TypeScript alias for imports from `src/`.
 - Preserve strict TypeScript typing, existing endpoint contracts, and accessible native controls. Surface failures to the user where the surrounding flow does so; do not silently pretend a failed save succeeded.
 - Keep feature changes narrow: edit only the files needed for the behavior and its directly related tests/docs. Do not reformat or refactor unrelated areas.
@@ -93,7 +94,7 @@ Route handlers generally return JSON and report server errors with `console.erro
 1. Read this skill first to understand the project and locate likely files.
 2. Translate the request into the smallest affected flow. Inspect only the relevant implementation, its direct callers, shared types/helpers, and any directly affected API/database contract. Do not scan every folder or file by default.
 3. Before changing Next.js code, follow the repository's `AGENTS.md`: read the relevant guide under `node_modules/next/dist/docs/` for the API or behavior being changed, and heed deprecation notices. Do not assume generic Next.js conventions apply.
-4. For database changes, inspect `initSchema` and the affected query/mutation in `src/lib/db.ts`. Make schema initialization/migrations safe for existing databases; preserve existing records and avoid direct edits to the database file.
+4. For database changes, inspect the affected query/mutation in `src/lib/db-dynamodb.ts` and preserve existing item shapes and behavior. Configure tables outside the application; do not create or seed production resources in code.
 5. For API/client changes, update the route and the actual caller together when required; preserve JSON fields, status codes, and loading/error behavior.
 6. Make the smallest complete change, add or adjust focused tests if a test setup exists, and update this skill only when durable project architecture or conventions change.
 7. Verify with the smallest relevant check. Current package scripts are `npm run lint` and `npm run build`; `package.json` does not define a test script. Check the repository's package-manager lockfile before choosing install/run commands.

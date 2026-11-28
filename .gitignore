@@ -34,7 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local sqlite database and uploaded photos
+# Legacy local database and uploaded files
 /data/
 
 # vercel

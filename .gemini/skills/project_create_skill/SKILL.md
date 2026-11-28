@@ -24,7 +24,7 @@ description: >
 | **Language** | Hindi + English bilingual (UI labels, OCR, WhatsApp messages) |
 | **Currency** | Indian Rupee (₹), formatted via `Intl.NumberFormat("en-IN")` |
 | **Target Users** | Boutique shop owners, tailors, staff (1-5 users, mobile-first) |
-| **Deployment** | Runs locally only (no cloud hosting); SQLite + local file storage |
+| **Deployment** | Next.js server deployment with AWS DynamoDB and private S3 storage |
 
 ---
 
@@ -37,15 +37,16 @@ description: >
 | **UI** | React | 19.3.0 | Server Components + Client Components |
 | **Styling** | Tailwind CSS | 4.3.3 | Via `@tailwindcss/turbopack` loader |
 | **Icons** | lucide-react | ^1.80.0 | |
-| **Database** | SQLite | Built-in `node:sqlite` | Node.js 24+ native module, WAL mode |
+| **Database** | AWS DynamoDB | `@aws-sdk/client-dynamodb` + `@aws-sdk/lib-dynamodb` | Configured orders, customers, and settings tables |
+| **File storage** | AWS S3 | `@aws-sdk/client-s3` | Private image bucket, proxied through the app |
 | **AI/OCR** | Google Gemini API | `@google/genai` ^3.6.1 | Vision OCR with structured JSON output |
 | **Receipt PDF** | `html2canvas-pro` + `jspdf` | npm dependencies | Renders full receipt and attachments to PDF; supports modern CSS colors |
 | **Fonts** | Plus Jakarta Sans, Noto Sans Devanagari, Geist Mono | Google Fonts | Latin + Devanagari script support |
 
 ### Runtime Requirements
-- **Node.js ≥ 24** (required for built-in `node:sqlite` — no npm SQLite packages needed)
-- Custom type declarations at `src/types/node-sqlite.d.ts` (since `@types/node` doesn't cover `node:sqlite` yet)
-- `next.config.ts` has `serverExternalPackages: ["node:sqlite"]` to prevent bundling
+- Configure `AWS_REGION`, `DYNAMODB_ORDERS_TABLE`, `DYNAMODB_CUSTOMERS_TABLE`, `DYNAMODB_SETTINGS_TABLE`, and `S3_BUCKET`.
+- The AWS SDK uses the standard credential provider chain; prefer IAM roles for hosted deployments.
+- The application does not use local database or upload fallbacks and does not create or seed DynamoDB tables.
 
 ---
 
@@ -67,6 +68,11 @@ WHATSAPP_RECEIPT_TEMPLATE_LANGUAGE=en
 ```env
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.5-flash
+AWS_REGION=
+DYNAMODB_ORDERS_TABLE=
+DYNAMODB_CUSTOMERS_TABLE=
+DYNAMODB_SETTINGS_TABLE=
+S3_BUCKET=
 WHATSAPP_ACCESS_TOKEN=
 WHATSAPP_PHONE_NUMBER_ID=
 WHATSAPP_GRAPH_API_VERSION=v27.0
@@ -96,12 +102,9 @@ boutique_shop_management/
 ├── .env.example                        # Template for .env.local
 ├── .gitignore
 ├── AGENTS.md                           # Next.js agent rules (auto-generated)
-├── next.config.ts                      # Next.js config (sqlite, turbopack, images)
+├── next.config.ts                      # Next.js config (Turbopack, images)
 ├── package.json
 ├── tsconfig.json
-├── data/                               # Runtime data (gitignored)
-│   ├── boutique.db                     # SQLite database (auto-created on first run)
-│   └── uploads/                        # Uploaded slip photos & sketches
 ├── src/
 │   ├── app/
 │   │   ├── globals.css                 # Tailwind imports + boutique theme CSS vars
@@ -128,10 +131,9 @@ boutique_shop_management/
 │   │   └── PrintReceiptModal.tsx       # Printable tailoring slip/receipt
 │   ├── lib/
 │   │   ├── types.ts                    # All TypeScript types, constants, utility functions
-│   │   ├── db.ts                       # SQLite database layer (CRUD, migrations, seed)
+│   │   ├── db.ts                       # DynamoDB persistence facade
+│   │   ├── db-dynamodb.ts               # DynamoDB orders, customers, and settings
 │   │   └── uploads.ts                  # File upload/serve utilities
-│   └── types/
-│       └── node-sqlite.d.ts            # Type declarations for Node.js built-in sqlite
 └── .gemini/
     └── skills/
         └── project_create_skill/
@@ -140,67 +142,17 @@ boutique_shop_management/
 
 ---
 
-## 5. Database Schema
+## 5. DynamoDB and S3
 
-The database is SQLite at `data/boutique.db`, auto-created on first run with WAL mode.
+The app uses three pre-created DynamoDB tables and one private S3 bucket. Set `AWS_REGION`, `DYNAMODB_ORDERS_TABLE`, `DYNAMODB_CUSTOMERS_TABLE`, `DYNAMODB_SETTINGS_TABLE`, and `S3_BUCKET` in `.env.local` or the deployment environment. The AWS identity needs DynamoDB `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, and `Scan` access plus S3 `GetObject` and `PutObject`.
 
-### Table: `orders`
-| Column | Type | Default | Description |
-|---|---|---|---|
-| `id` | INTEGER PK | AUTOINCREMENT | Unique order ID |
-| `customer_id` | INTEGER | NULL | FK to `customers.id` (auto-linked on create) |
-| `serial_no` | TEXT NOT NULL | | Slip/bill number (e.g. "679") |
-| `customer_name` | TEXT NOT NULL | | Customer name |
-| `phone` | TEXT NOT NULL | | Phone number |
-| `address` | TEXT | '' | Customer address |
-| `garment_type` | TEXT | '' | e.g. "Anarkali Suit", "Blouse" |
-| `order_date` | TEXT NOT NULL | | YYYY-MM-DD |
-| `delivery_date` | TEXT NOT NULL | | YYYY-MM-DD |
-| `status` | TEXT NOT NULL | 'Received' | One of: Received, Cutting, Stitching, Ready for Delivery, Delivered |
-| `measurements_json` | TEXT NOT NULL | '{}' | JSON string of `Measurements` object |
-| `items_json` | TEXT NOT NULL | '[]' | JSON array of `BillItem[]` |
-| `total_amount` | REAL NOT NULL | 0 | Total in ₹ |
-| `advance_paid` | REAL NOT NULL | 0 | Advance received in ₹ |
-| `balance_due` | REAL NOT NULL | 0 | Remaining balance in ₹ |
-| `slip_photo_url` | TEXT | '' | URL path to uploaded slip photo |
-| `design_photos_json` | TEXT NOT NULL | '[]' | JSON array of `DesignPhoto[]` |
-| `ocr_raw_json` | TEXT | '' | Raw OCR extraction JSON |
-| `ocr_confidence` | TEXT | 'none' | 'none' \| 'ai_extracted' \| 'verified' |
-| `verified_by` | TEXT | '' | Who verified the OCR data |
-| `created_at` | TEXT NOT NULL | | ISO timestamp |
-| `updated_at` | TEXT NOT NULL | | ISO timestamp |
-
-**Indexes**: `serial_no`, `phone`, `status`, `delivery_date`, `customer_id`
-
-### Table: `customers`
-| Column | Type | Default | Description |
-|---|---|---|---|
-| `id` | INTEGER PK | AUTOINCREMENT | Unique customer ID |
-| `name` | TEXT NOT NULL | | Customer name |
-| `phone` | TEXT NOT NULL | | Phone number |
-| `phone_key` | TEXT NOT NULL | '' | Normalized last-10-digits (for dedup matching) |
-| `address` | TEXT | '' | Address |
-| `notes` | TEXT | '' | Staff notes about the customer |
-| `created_at` | TEXT NOT NULL | | ISO timestamp |
-| `updated_at` | TEXT NOT NULL | | ISO timestamp |
-
-**Index**: `phone_key`
-
-### Table: `settings`
-| Column | Type | Description |
+| Table | Partition key | Contents |
 |---|---|---|
-| `key` | TEXT PK | Setting name |
-| `value` | TEXT NOT NULL | Setting value |
+| Orders | `id` (Number) | Order records |
+| Customers | `id` (Number) | Customer records |
+| Settings | `key` (String) | Shop setting values and atomic order/customer ID counters |
 
-**Default settings**: `shop_name`, `shop_phone`, `shop_address`, `default_unit`, `initial_seeded`
-
-### Auto-Migration
-On startup, `initSchema()` in `db.ts`:
-1. Creates all tables if they don't exist
-2. Checks if `orders` table has `customer_id` column — adds it via `ALTER TABLE` if missing
-3. Inserts default settings (INSERT OR IGNORE)
-4. Seeds 3 sample orders if DB is fresh (Neha Gupta #679, Priya Sharma #680, Aisha Khan #681)
-5. Backfills `customer_id` for any orders missing it (creates customer records as needed)
+The app uses the AWS SDK credential provider chain and never falls back to local files, SQLite, or Supabase. It does not create or seed tables. Existing SQLite/Supabase records and local uploads require a separate migration; no automatic migration occurs.
 
 ---
 
@@ -603,12 +555,7 @@ When the same customer comes again:
 
 ## 14. Seed Data
 
-Three sample orders created on first run (if DB is empty):
-1. **#679 — Neha Gupta** (9876543210): Anarkali Suit, Ready for Delivery, ₹1,700, verified
-2. **#680 — Priya Sharma** (9811223344): Bridal Padded Blouse, Stitching, ₹1,700
-3. **#681 — Aisha Khan** (9910456789): Kurti & Straight Pant, Cutting, ₹1,250
-
-Each has realistic Hindi+English measurements and billing items.
+No sample customer or order records are created. New numeric IDs are allocated with atomic counters in the settings table.
 
 ---
 
@@ -621,7 +568,7 @@ Each has realistic Hindi+English measurements and billing items.
 | OCR timeout / AbortError | 15s timeout; AbortError is retryable, next model in chain is tried |
 | PowerShell `&&` invalid | Use `;` or `; if ($LASTEXITCODE -eq 0) { }` instead |
 | Turbopack tracing warning | Add `/*turbopackIgnore: true*/` before `fs.readFileSync` path |
-| No `@types/node` for `node:sqlite` | Custom declarations at `src/types/node-sqlite.d.ts` |
+| AWS resource access denied | Verify the configured table/bucket names, region, and IAM permissions |
 | `setState` in `useEffect` ESLint error | Use `key` prop on modal components for re-initialization |
 
 ---
@@ -649,11 +596,11 @@ Each has realistic Hindi+English measurements and billing items.
 | Add a new order status/stage | `src/lib/types.ts` (OrderStatus, ORDER_STAGES), `src/components/BoutiqueApp.tsx` (STAGE_BADGE) |
 | Change OCR prompt | `src/app/api/ocr/route.ts` → `buildOcrPrompt()` |
 | Add a new API endpoint | `src/app/api/<route>/route.ts`, `src/lib/db.ts` (if DB needed) |
-| Add a new DB table | `src/lib/db.ts` → `initSchema()`, `src/lib/types.ts` |
+| Add a new DB table | Provision it in AWS, update `.env.example` and `src/lib/db-dynamodb.ts` |
 | Modify the dashboard UI | `src/components/BoutiqueApp.tsx` |
 | Change WhatsApp message format | `src/lib/types.ts` → `buildWhatsAppMessage()` |
 | Modify print receipt layout | `src/components/PrintReceiptModal.tsx` |
 | Send receipt PDF via WhatsApp Cloud API | `src/components/PrintReceiptModal.tsx`, `src/app/api/orders/[id]/receipt/route.ts`, server environment variables |
 | Change theme colors | `src/app/globals.css` (CSS vars), component files (Tailwind classes) |
-| Update shop default settings | `src/lib/db.ts` → `initSchema()` defaults |
-| Add customer fields | `src/lib/types.ts` (CustomerSummary), `src/lib/db.ts` (customers table + migration), `src/components/CustomerDetailDrawer.tsx` |
+| Update shop default settings | `src/lib/db-dynamodb.ts` → `DEFAULT_SETTINGS` |
+| Add customer fields | `src/lib/types.ts` (`CustomerSummary`), `src/lib/db-dynamodb.ts`, `src/components/CustomerDetailDrawer.tsx` |
